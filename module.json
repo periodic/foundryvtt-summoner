@@ -2,12 +2,20 @@
   "name": "summoner",
   "title": "Summoner",
   "description": "Utilities to aid in summoning and dismissing tokens for players",
-  "author": "periodic",
+  "authors": {
+    "name": "Periodic",
+    "url": "https://github.com/periodic"
+  },
+  "url": "https://github.com/periodic/foundryvtt-summoner",
   "version": "0.1.0",
   "minimumCoreVersion": "0.7.0",
   "compatibleCoreVersion": "0.7.8",
   "esmodules": ["scripts/summoner.js"],
   "packs": [],
   "dependencies": [],
-  "socket": true
+  "socket": true,
+  "manifest": "https://github.com/periodic/foundryvtt-summoner/releases/latest/download/module.json",
+  "download": "https://github.com/periodic/foundryvtt-summoner/releases/download/v0.1.0/summoner-v0.1.0.zip",
+  "license": "https://github.com/periodic/foundryvtt-summoner/blob/v0.1.0/LICENSE",
+  "readme": "https://github.com/periodic/foundryvtt-summoner/blob/v0.1.0/README.md"
 }
