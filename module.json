@@ -1,0 +1,13 @@
+{
+  "name": "summoner",
+  "title": "Summoner",
+  "description": "Utilities to aid in summoning and dismissing tokens for players",
+  "author": "periodic",
+  "version": "0.0.1",
+  "minimumCoreVersion": "0.7.0",
+  "compatibleCoreVersion": "0.7.8",
+  "esmodules": ["scripts/summoner.js"],
+  "packs": [],
+  "dependencies": [],
+  "socket": true
+}
