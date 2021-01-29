@@ -1,6 +1,6 @@
 import * as Util from "./util.js";
 
-const SOCKET_NAME = "module.periodic-data";
+const SOCKET_NAME = "module.summoner";
 const log = Util.log("Summoner");
 
 Hooks.on("ready", onReady);
@@ -21,6 +21,7 @@ export function onReady() {
   window.Summoner = {
     placeAndSummon,
     placeAndSummonFromSpell,
+    placeAndSummonPolymorphed,
     dismiss,
   };
 
@@ -47,56 +48,105 @@ export function placeAndSummonFromSpell(
   minionName,
   overrides = {}
 ) {
-  return game.dnd5e.applications.AbilityUseDialog.create(spell).then((configuration) =>
-    chooseSquare(async (x, y) => {
-      // Following logic ripped from DnD5e system.  Item5e.roll.
-      const spellLevel =
-        configuration.level === "pact"
-          ? actor.data.data.spells.pact.level
-          : parseInt(configuration.level);
+  return game.dnd5e.applications.AbilityUseDialog.create(spell).then(
+    (configuration) =>
+      chooseSquare(async (x, y) => {
+        // Following logic ripped from DnD5e system.  Item5e.roll.
+        const spellLevel =
+          configuration.level === "pact"
+            ? actor.data.data.spells.pact.level
+            : parseInt(configuration.level);
 
-      const consumeQuantity = spell.data.uses?.autoDestroy;
-      const consumeUsage = Boolean(configuration.consumeUse);
-      const consumeRecharge = Boolean(configuration.consumeRecharge);
-      const consumeResource = Boolean(configuration.consumeResource);
-      const consumeSpellSlot =
-        Boolean(configuration.consumeSlot) &&
-        (configuration.level === "pact" ? "pact" : `spell${spellLevel}`);
+        const consumeQuantity = spell.data.uses?.autoDestroy;
+        const consumeUsage = Boolean(configuration.consumeUse);
+        const consumeRecharge = Boolean(configuration.consumeRecharge);
+        const consumeResource = Boolean(configuration.consumeResource);
+        const consumeSpellSlot =
+          Boolean(configuration.consumeSlot) &&
+          (configuration.level === "pact" ? "pact" : `spell${spellLevel}`);
 
-      // Determine whether the item can be used by testing for resource consumption
-      const usage = spell._getUsageUpdates({
-        consumeRecharge,
-        consumeResource,
-        consumeSpellSlot,
-        consumeUsage,
-        consumeQuantity,
-      });
-      if (!usage) return;
-      const { actorUpdates, itemUpdates, resourceUpdates } = usage;
+        // Determine whether the item can be used by testing for resource consumption
+        const usage = spell._getUsageUpdates({
+          consumeRecharge,
+          consumeResource,
+          consumeSpellSlot,
+          consumeUsage,
+          consumeQuantity,
+        });
+        if (!usage) return;
+        const { actorUpdates, itemUpdates, resourceUpdates } = usage;
 
-      // Commit pending data updates
-      if (!isObjectEmpty(itemUpdates)) await spell.update(itemUpdates);
-      if (consumeQuantity && spell.data.data.quantity === 0)
-        await spell.delete();
-      if (!isObjectEmpty(actorUpdates)) await actor.update(actorUpdates);
-      if (!isObjectEmpty(resourceUpdates)) {
-        const resource = actor.items.get(id.consume?.target);
-        if (resource) await resource.update(resourceUpdates);
-      }
-      // End Item5e.roll logic
+        // Commit pending data updates
+        if (!isObjectEmpty(itemUpdates)) await spell.update(itemUpdates);
+        if (consumeQuantity && spell.data.data.quantity === 0)
+          await spell.delete();
+        if (!isObjectEmpty(actorUpdates)) await actor.update(actorUpdates);
+        if (!isObjectEmpty(resourceUpdates)) {
+          const resource = actor.items.get(id.consume?.target);
+          if (resource) await resource.update(resourceUpdates);
+        }
+        // End Item5e.roll logic
 
-      const spellLevelOverride = {
-        actorData: { data: { attributes: { spellLevel } } },
-      };
-      sendSummonRequest(
-        actor,
-        minionName,
-        x,
-        y,
-        mergeObject(overrides, spellLevelOverride, { inplace: false }),
-        { setSpellBonuses: true }
-      );
-    })
+        const spellLevelOverride = {
+          actorData: { data: { attributes: { spellLevel } } },
+        };
+        sendSummonRequest(
+          actor,
+          minionName,
+          x,
+          y,
+          mergeObject(overrides, spellLevelOverride, { inplace: false }),
+          { setSpellBonuses: true }
+        );
+      })
+  );
+}
+
+export async function placeAndSummonPolymorphed(
+  actor,
+  minionName,
+  polymorphOptions = {}
+) {
+  const polymorphFolder = Util.require(
+    game.folders.getName(minionName),
+    `Could not find folder of polymorphs. Only entities in the "${minionName}" folder can be used as polymorphs.`
+  );
+  const html = await renderTemplate(
+    "/modules/summoner/templates/choose_polymorph.html",
+    {
+      minionName,
+      polymorphOptions: polymorphFolder.content.map((a) => a.name),
+    }
+  );
+  const { polymorphName } = await new Promise((resolve) => {
+    const dialog = new Dialog({
+      title: `Summon ${minionName}`,
+      content: html,
+      buttons: {
+        cast: {
+          icon: '<i class="fas fa-magic"></i>',
+          label: "Summon",
+          callback: (html) =>
+            resolve(
+              new FormDataExtended(html[0].querySelector("form")).toObject()
+            ),
+        },
+      },
+      default: "cast",
+      close: () => resolve({}),
+    });
+    dialog.render(true);
+  });
+
+  if (!polymorphName) {
+    return;
+  }
+
+  return placeAndSummon(
+    actor,
+    minionName,
+    {},
+    { polymorph: { ...polymorphOptions, name: polymorphName } }
   );
 }
 
@@ -159,7 +209,9 @@ const PLACE_TOKEN_HIGHLIGHT_COLOR = 0x3366cc;
 const PLACE_TOKEN_HIGHLIGHT_BORDER = 0x000000;
 
 function chooseSquare(callback) {
-  const highlightLayer = canvas.grid.addHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
+  const highlightLayer = canvas.grid.addHighlightLayer(
+    PLACE_TOKEN_HIGHLIGHT_LAYER
+  );
 
   const leftClickListener = function (event) {
     const scenePos = event.data.getLocalPosition(highlightLayer);
@@ -168,7 +220,7 @@ function chooseSquare(callback) {
     highlightLayer.clear();
     canvas.stage.off("mousedown", leftClickListener);
     canvas.stage.off("mousemove", moveListener);
-    
+
     canvas.grid.destroyHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
 
     callback(x, y);
@@ -189,7 +241,7 @@ function chooseSquare(callback) {
       border: PLACE_TOKEN_HIGHLIGHT_BORDER,
     });
     lastMoveTime = now;
-  }
+  };
 
   canvas.stage.on("mousedown", leftClickListener);
   canvas.stage.on("mousemove", moveListener);
@@ -253,7 +305,7 @@ export async function createSummonedToken({
   x,
   y,
   overrides = {},
-  options = { setSpellBonuses: false },
+  options = { setSpellBonuses: false, polymorph: {} },
 }) {
   const user = Util.require(
     game.users.get(summonerUserId),
@@ -270,7 +322,7 @@ export async function createSummonedToken({
     `Could not find summons folder. Only entities in the "Summons" folder can be summoned.`
   );
   const summonActor = Util.require(
-    summonFolder.collection.getName(name),
+    summonFolder.content.find((a) => a.name === name),
     `Recieved request to summon ${name} that cannot be found in the "Summons" folder.`
   );
 
@@ -296,12 +348,28 @@ export async function createSummonedToken({
     y,
   });
 
-  return Token.create(token.data).then((token) => {
+  return Token.create(token.data).then(async (token) => {
+    if (options.polymorph) {
+      await polymorphToken(token, options.polymorph);
+    }
     if (options.setSpellBonuses) {
-      updateSpellDcsFromActor(summonerActor, token);
+      await updateSpellDcsFromActor(summonerActor, token);
     }
     return token;
   });
+}
+
+function polymorphToken(token, polymorph) {
+  const polymorphFolder = Util.require(
+    game.folders.getName(token.actor.name),
+    `Could not find folder of polymorphs. Only entities in the "${token.actor.name}" folder can be used as polymorphs.`
+  );
+  const polymorphActor = Util.require(
+    polymorphFolder.content.find((a) => a.name === polymorph.name),
+    `Recieved request to polymorph "${token.name}" to "${polymorph.name}" that cannot be found in the "${token.actor.name}" folder.`
+  );
+
+  return token.actor.transformInto(polymorphActor, polymorph);
 }
 
 export function dismissSummonedTokens({ name, userId }) {

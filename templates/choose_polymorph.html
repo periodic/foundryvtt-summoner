@@ -1,0 +1,10 @@
+<form id="choose polymorph">
+    <p>Choose the form for {{minionName}}</p>
+    <p>
+        <select name="polymorphName">
+            {{#each polymorphOptions as |option|}}
+            <option>{{option}}</option>
+            {{/each}}
+        </select>
+    </p>
+</form>
