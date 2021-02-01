@@ -369,7 +369,30 @@ function polymorphToken(token, polymorph) {
     `Recieved request to polymorph "${token.name}" to "${polymorph.name}" that cannot be found in the "${token.actor.name}" folder.`
   );
 
-  return token.actor.transformInto(polymorphActor, polymorph);
+  if (token.actor.transformInto) {
+    return token.actor.transformInto(polymorphActor, polymorph);
+  } else {
+    const from = token.actor.data;
+    const to = polymorphActor.data;
+    const name =`${to.name} (${from.name})`;
+    const newData = {
+        ...to.token,
+        actorLink: from.token.actorLink,
+        actorId: from.token.actorId,
+        name,
+        actorData: {
+          type: from.type,
+          name, 
+          data: to.data,
+          items: to.items.concat(from.items),
+          img: to.img,
+          permission: from.permission,
+          folder: from.folder,
+          flags: from.flags,
+        }
+    };
+    return token.update(newData)
+  }
 }
 
 export function dismissSummonedTokens({ name, userId }) {
