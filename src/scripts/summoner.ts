@@ -1,12 +1,12 @@
 import * as Util from "./util.js";
 
 const SOCKET_NAME = "module.summoner";
-const log = Util.log("Summoner");
+const log = Util.log;
 
 Hooks.on("ready", onReady);
 
 export function onReady() {
-  console.log("Summoner | Initializing...");
+  log("Initializing...");
   game.socket.on(SOCKET_NAME, receiveMessage);
 
   game.settings.register("summoner", "debug", {
@@ -18,7 +18,7 @@ export function onReady() {
     config: true,
   });
 
-  window.Summoner = {
+  (window as any).Summoner = {
     placeAndSummon,
     placeAndSummonFromSpell,
     placeAndSummonPolymorphed,
@@ -32,7 +32,7 @@ export function onReady() {
  * Summons have the following fields:
  */
 export function placeAndSummon(
-  actor,
+  actor: Actor,
   minionName,
   overrides = {},
   options = {}
@@ -82,7 +82,7 @@ export function placeAndSummonFromSpell(
           await spell.delete();
         if (!isObjectEmpty(actorUpdates)) await actor.update(actorUpdates);
         if (!isObjectEmpty(resourceUpdates)) {
-          const resource = actor.items.get(id.consume?.target);
+          const resource = actor.items.get(spell.data.consume?.target);
           if (resource) await resource.update(resourceUpdates);
         }
         // End Item5e.roll logic
@@ -115,7 +115,7 @@ export async function placeAndSummonPolymorphed(
     "/modules/summoner/templates/choose_polymorph.html",
     {
       minionName,
-      polymorphOptions: polymorphFolder.content.map((a) => a.name),
+      polymorphOptions: polymorphFolder.entities.map((a) => a.name),
     }
   );
   const { polymorphName } = await new Promise((resolve) => {
@@ -133,7 +133,7 @@ export async function placeAndSummonPolymorphed(
         },
       },
       default: "cast",
-      close: () => resolve({}),
+      close: () => resolve({ polymorphName: null }),
     });
     dialog.render(true);
   });
@@ -318,11 +318,11 @@ export async function createSummonedToken({
   );
 
   const summonFolder = Util.require(
-    game.folders.getName("Summons"),
+    game.folders.getName("Summons") as Folder<Actor>,
     `Could not find summons folder. Only entities in the "Summons" folder can be summoned.`
   );
   const summonActor = Util.require(
-    summonFolder.content.find((a) => a.name === name),
+    summonFolder.entities.find((a) => a.name === name),
     `Recieved request to summon ${name} that cannot be found in the "Summons" folder.`
   );
 
@@ -365,7 +365,7 @@ function polymorphToken(token, polymorph) {
     `Could not find folder of polymorphs. Only entities in the "${token.actor.name}" folder can be used as polymorphs.`
   );
   const polymorphActor = Util.require(
-    polymorphFolder.content.find((a) => a.name === polymorph.name),
+    polymorphFolder.entities.find((a) => a.name === polymorph.name) as Actor,
     `Recieved request to polymorph "${token.name}" to "${polymorph.name}" that cannot be found in the "${token.actor.name}" folder.`
   );
 
@@ -374,31 +374,31 @@ function polymorphToken(token, polymorph) {
   } else {
     const from = token.actor.data;
     const to = polymorphActor.data;
-    const name =`${to.name} (${from.name})`;
+    const name = `${to.name} (${from.name})`;
     const newData = {
-        ...to.token,
-        actorLink: from.token.actorLink,
-        actorId: from.token.actorId,
+      ...to.token,
+      actorLink: from.token.actorLink,
+      actorId: from.token.actorId,
+      name,
+      actorData: {
+        type: from.type,
         name,
-        actorData: {
-          type: from.type,
-          name, 
-          data: to.data,
-          items: to.items.concat(from.items),
-          img: to.img,
-          permission: from.permission,
-          folder: from.folder,
-          flags: from.flags,
-        }
+        data: to.data,
+        items: to.items.concat(from.items),
+        img: to.img,
+        permission: from.permission,
+        folder: from.folder,
+        flags: from.flags,
+      },
     };
-    return token.update(newData)
+    return token.update(newData);
   }
 }
 
 export function dismissSummonedTokens({ name, userId }) {
   const user = game.users.get(userId);
   const summonFolder = game.folders.getName("Summons");
-  const summonActor = summonFolder?.collection.getName(name);
+  const summonActor = summonFolder?.collection.getName(name) as Actor;
 
   if (!canSummon(user, summonActor)) {
     console.error(
