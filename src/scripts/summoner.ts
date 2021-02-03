@@ -1,15 +1,14 @@
 import * as Util from "./util.js";
 
+const MODULE_NAME = "summoner";
 const SOCKET_NAME = "module.summoner";
+const SUMMON_COMPLETE_FLAG = "summoningComplete";
 const log = Util.log;
 
 Hooks.on("ready", onReady);
 
-export function onReady() {
-  log("Initializing...");
-  game.socket.on(SOCKET_NAME, receiveMessage);
-
-  game.settings.register("summoner", "debug", {
+export function onReady(): void {
+  game.settings.register(MODULE_NAME, "debug", {
     name: "Debug",
     hint: "",
     scope: "client",
@@ -17,6 +16,9 @@ export function onReady() {
     type: Boolean,
     config: true,
   });
+
+  log("Initializing...");
+  game.socket.on(SOCKET_NAME, receiveMessage);
 
   (window as any).Summoner = {
     placeAndSummon,
@@ -33,24 +35,24 @@ export function onReady() {
  */
 export function placeAndSummon(
   actor: Actor,
-  minionName,
-  overrides = {},
-  options = {}
-) {
-  chooseSquare((x, y) => {
-    sendSummonRequest(actor, minionName, x, y, overrides, options);
-  });
+  minionName: string,
+  overrides: Partial<TokenData> = {},
+  options: SummonOptions = {}
+): Promise<Token> {
+  return chooseSquare().then(({ x, y }) =>
+    sendSummonRequest(actor, minionName, x, y, overrides, options)
+  );
 }
 
 export function placeAndSummonFromSpell(
-  actor,
-  spell,
-  minionName,
-  overrides = {}
-) {
+  actor: any,
+  spell: any,
+  minionName: string,
+  overrides: Partial<TokenData> = {}
+): Promise<Token> {
   return game.dnd5e.applications.AbilityUseDialog.create(spell).then(
     (configuration) =>
-      chooseSquare(async (x, y) => {
+      chooseSquare().then(async ({ x, y }) => {
         // Following logic ripped from DnD5e system.  Item5e.roll.
         const spellLevel =
           configuration.level === "pact"
@@ -95,7 +97,7 @@ export function placeAndSummonFromSpell(
           minionName,
           x,
           y,
-          mergeObject(overrides, spellLevelOverride, { inplace: false }),
+          mergeObject(overrides, spellLevelOverride as any, { inplace: false }),
           { setSpellBonuses: true }
         );
       })
@@ -103,10 +105,10 @@ export function placeAndSummonFromSpell(
 }
 
 export async function placeAndSummonPolymorphed(
-  actor,
-  minionName,
-  polymorphOptions = {}
-) {
+  actor: Actor,
+  minionName: string,
+  polymorphOptions: any = {}
+): Promise<Token> {
   const polymorphFolder = Util.require(
     game.folders.getName(minionName),
     `Could not find folder of polymorphs. Only entities in the "${minionName}" folder can be used as polymorphs.`
@@ -150,8 +152,8 @@ export async function placeAndSummonPolymorphed(
   );
 }
 
-export function dismiss(minionName) {
-  sendDismissRequest(minionName);
+export function dismiss(minionName: string): Promise<void> {
+  return sendDismissRequest(minionName);
 }
 
 /**
@@ -160,12 +162,10 @@ export function dismiss(minionName) {
  * good way to get a flat amount.
  *
  * TODO: is there a way to set these values on items when creating a token?
- *
- * @param {Actor} actor
- * @param {Token} token
  */
-export function updateSpellDcsFromActor(actor, token) {
-  const dc = actor.data.data.attributes.spelldc;
+export function updateSpellDcsFromActor(actor: Actor, token: Token) {
+  // This is a DnD5e operation, so uses the 5E actor.
+  const dc = (actor.data.data as any).attributes.spelldc;
   // The updates have to be reduced to make sure they are sequenced otherwise
   // they will cancel each other.
   // TODO: Can this be done in a bulk update?
@@ -178,7 +178,7 @@ export function updateSpellDcsFromActor(actor, token) {
   );
 }
 
-export function getSpellBonusesFromActor(actor) {
+export function getSpellBonusesFromActor(actor: any) {
   const actorData = actor.data.data;
   const attackBonus =
     actorData.attributes.prof +
@@ -208,50 +208,83 @@ const PLACE_TOKEN_HIGHLIGHT_LAYER = "PlaceToken";
 const PLACE_TOKEN_HIGHLIGHT_COLOR = 0x3366cc;
 const PLACE_TOKEN_HIGHLIGHT_BORDER = 0x000000;
 
-function chooseSquare(callback) {
-  const highlightLayer = canvas.grid.addHighlightLayer(
-    PLACE_TOKEN_HIGHLIGHT_LAYER
-  );
+function chooseSquare(): Promise<{ x: number; y: number }> {
+  return new Promise((resolve) => {
+    const highlightLayer = canvas.grid.addHighlightLayer(
+      PLACE_TOKEN_HIGHLIGHT_LAYER
+    );
 
-  const leftClickListener = function (event) {
-    const scenePos = event.data.getLocalPosition(highlightLayer);
-    const [x, y] = canvas.grid.getTopLeft(scenePos.x, scenePos.y);
+    const leftClickListener = function (event) {
+      const scenePos = event.data.getLocalPosition(highlightLayer);
+      const [x, y] = canvas.grid.getTopLeft(scenePos.x, scenePos.y);
 
-    highlightLayer.clear();
-    canvas.stage.off("mousedown", leftClickListener);
-    canvas.stage.off("mousemove", moveListener);
+      highlightLayer.clear();
+      canvas.stage.off("mousedown", leftClickListener);
+      canvas.stage.off("mousemove", moveListener);
 
-    canvas.grid.destroyHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
+      canvas.grid.destroyHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
 
-    callback(x, y);
-  };
+      resolve({ x, y });
+    };
 
-  let lastMoveTime = 0;
-  const moveListener = function (event) {
-    // event.stopPropagation();
-    const now = Date.now();
-    if (now - lastMoveTime <= 30) return;
-    const scenePos = event.data.getLocalPosition(highlightLayer);
-    const [x, y] = canvas.grid.getTopLeft(scenePos.x, scenePos.y);
-    highlightLayer.clear();
-    canvas.grid.grid.highlightGridPosition(highlightLayer, {
-      x,
-      y,
-      color: PLACE_TOKEN_HIGHLIGHT_COLOR,
-      border: PLACE_TOKEN_HIGHLIGHT_BORDER,
-    });
-    lastMoveTime = now;
-  };
+    let lastMoveTime = 0;
+    const moveListener = function (event) {
+      // event.stopPropagation();
+      const now = Date.now();
+      if (now - lastMoveTime <= 30) return;
+      const scenePos = event.data.getLocalPosition(highlightLayer);
+      const [x, y] = canvas.grid.getTopLeft(scenePos.x, scenePos.y);
+      highlightLayer.clear();
+      canvas.grid.grid.highlightGridPosition(highlightLayer, {
+        x,
+        y,
+        color: PLACE_TOKEN_HIGHLIGHT_COLOR,
+        border: PLACE_TOKEN_HIGHLIGHT_BORDER,
+      });
+      lastMoveTime = now;
+    };
 
-  canvas.stage.on("mousedown", leftClickListener);
-  canvas.stage.on("mousemove", moveListener);
+    canvas.stage.on("mousedown", leftClickListener);
+    canvas.stage.on("mousemove", moveListener);
+  });
 }
 
-function sendSummonRequest(actor, name, x, y, overrides, options) {
+interface SummonOptions {
+  setSpellBonuses?: boolean;
+  polymorph?: { name?: string };
+}
+
+interface SummonRequestMessage {
+  action: "summon";
+  summonerUserId: string;
+  summonerActorId: string;
+  name: string;
+  x: number;
+  y: number;
+  overrides: Partial<TokenData>;
+  options: SummonOptions;
+}
+
+interface DismissRequestMessage {
+  action: "dismiss";
+  name: string;
+  userId: string;
+}
+
+type Message = SummonRequestMessage | DismissRequestMessage;
+
+function sendSummonRequest(
+  actor: Actor,
+  name: string,
+  x: number,
+  y: number,
+  overrides: Partial<TokenData>,
+  options: SummonOptions
+): Promise<Token> {
   log("Sending summon request");
   const user = game.user;
   const message = {
-    action: "summon",
+    action: "summon" as const,
     summonerUserId: user.id,
     summonerActorId: actor.id,
     name,
@@ -260,17 +293,42 @@ function sendSummonRequest(actor, name, x, y, overrides, options) {
     overrides,
     options,
   };
-  dispatchMessage(message);
+  return new Promise((resolve) => {
+    const hookId = Hooks.on(
+      "updateToken",
+      (scene: Scene, data, changes, isDiff) => {
+        const token: Token = new Token(data);
+        if (
+          changes.flags?.[MODULE_NAME]?.[SUMMON_COMPLETE_FLAG] &&
+          game.actors.getName(name).id == token.data.actorId
+        ) {
+          log(`Summoning complete for ${name}.`);
+          resolve(token);
+          Hooks.off("updateToken", hookId);
+        }
+      }
+    );
+    dispatchMessage(message);
+  });
 }
 
-function sendDismissRequest(name) {
+function sendDismissRequest(name: string): Promise<void> {
   const user = game.user;
-  const message = { action: "dismiss", userId: user.id, name };
+  const message = { action: "dismiss" as const, userId: user.id, name };
 
-  dispatchMessage(message);
+  return new Promise((resolve) => {
+    const hookId = Hooks.on("deleteToken", (scene, data, changes, isDiff) => {
+      if (game.actors.getName(name).id == data.actorId) {
+        log(`Dismiss complete for ${name}.`);
+        resolve(data);
+        Hooks.off("deleteToken", hookId);
+      }
+    });
+    dispatchMessage(message);
+  });
 }
 
-function dispatchMessage(message) {
+function dispatchMessage(message: Message) {
   if (game.user.isGM) {
     receiveMessage(message);
   } else {
@@ -278,7 +336,7 @@ function dispatchMessage(message) {
   }
 }
 
-function receiveMessage(message) {
+function receiveMessage(message: Message) {
   if (game.user.id !== game.users.filter((u) => u.isGM)[0]?.id) {
     // Skip anyone who isn't the first GM.
     return;
@@ -294,8 +352,8 @@ function receiveMessage(message) {
   }
 }
 
-function canSummon(user, actor) {
-  return actor?.hasPerm(user, CONST.ENTITY_PERMISSIONS.OWNER);
+function canSummon(user: User, actor: Actor): boolean {
+  return actor.hasPerm(user, CONST.ENTITY_PERMISSIONS.OWNER);
 }
 
 export async function createSummonedToken({
@@ -306,22 +364,22 @@ export async function createSummonedToken({
   y,
   overrides = {},
   options = { setSpellBonuses: false, polymorph: {} },
-}) {
-  const user = Util.require(
+}: SummonRequestMessage): Promise<Token> {
+  const user: User = Util.require(
     game.users.get(summonerUserId),
     `User ${summonerUserId} does not exist from request to summon ${name}.`
   );
 
-  const summonerActor = Util.require(
+  const summonerActor: Actor = Util.require(
     game.actors.get(summonerActorId),
     `Actor ${summonerActorId} does not exist from request to summon ${name}.`
   );
 
-  const summonFolder = Util.require(
+  const summonFolder: Folder<Actor> = Util.require(
     game.folders.getName("Summons") as Folder<Actor>,
     `Could not find summons folder. Only entities in the "Summons" folder can be summoned.`
   );
-  const summonActor = Util.require(
+  const summonActor: Actor = Util.require(
     summonFolder.entities.find((a) => a.name === name),
     `Recieved request to summon ${name} that cannot be found in the "Summons" folder.`
   );
@@ -349,17 +407,21 @@ export async function createSummonedToken({
   });
 
   return Token.create(token.data).then(async (token) => {
-    if (options.polymorph) {
+    if (options.polymorph && options.polymorph.name) {
       await polymorphToken(token, options.polymorph);
     }
     if (options.setSpellBonuses) {
       await updateSpellDcsFromActor(summonerActor, token);
     }
+    await token.setFlag(MODULE_NAME, SUMMON_COMPLETE_FLAG, true);
     return token;
   });
 }
 
-function polymorphToken(token, polymorph) {
+function polymorphToken(
+  token: Token,
+  polymorph: { name?: string } // and any other 5E polymorph options.
+): Promise<Token> {
   const polymorphFolder = Util.require(
     game.folders.getName(token.actor.name),
     `Could not find folder of polymorphs. Only entities in the "${token.actor.name}" folder can be used as polymorphs.`
@@ -369,8 +431,8 @@ function polymorphToken(token, polymorph) {
     `Recieved request to polymorph "${token.name}" to "${polymorph.name}" that cannot be found in the "${token.actor.name}" folder.`
   );
 
-  if (token.actor.transformInto) {
-    return token.actor.transformInto(polymorphActor, polymorph);
+  if ((token.actor as any).transformInto) {
+    return (token.actor as any).transformInto(polymorphActor, polymorph);
   } else {
     const from = token.actor.data;
     const to = polymorphActor.data;
@@ -395,7 +457,10 @@ function polymorphToken(token, polymorph) {
   }
 }
 
-export function dismissSummonedTokens({ name, userId }) {
+export function dismissSummonedTokens({
+  name,
+  userId,
+}: DismissRequestMessage): Promise<Token[]> {
   const user = game.users.get(userId);
   const summonFolder = game.folders.getName("Summons");
   const summonActor = summonFolder?.collection.getName(name) as Actor;
