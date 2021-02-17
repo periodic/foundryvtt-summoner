@@ -7,15 +7,15 @@
     "url": "https://github.com/periodic"
   },
   "url": "https://github.com/periodic/foundryvtt-summoner",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "minimumCoreVersion": "0.7.0",
-  "compatibleCoreVersion": "0.7.8",
+  "compatibleCoreVersion": "0.7.9",
   "esmodules": ["scripts/summoner.js"],
   "packs": [],
   "dependencies": [],
   "socket": true,
   "manifest": "https://github.com/periodic/foundryvtt-summoner/releases/latest/download/module.json",
-  "download": "https://github.com/periodic/foundryvtt-summoner/releases/download/v0.1.3/summoner-v0.1.3.zip",
-  "license": "https://github.com/periodic/foundryvtt-summoner/blob/v0.1.3/LICENSE",
-  "readme": "https://github.com/periodic/foundryvtt-summoner/blob/v0.1.3/README.md"
+  "download": "https://github.com/periodic/foundryvtt-summoner/releases/download/v0.1.4/summoner-v0.1.4.zip",
+  "license": "https://github.com/periodic/foundryvtt-summoner/blob/v0.1.4/LICENSE",
+  "readme": "https://github.com/periodic/foundryvtt-summoner/blob/v0.1.4/README.md"
 }
