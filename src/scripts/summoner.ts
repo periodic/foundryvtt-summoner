@@ -153,7 +153,11 @@ export async function placeAndSummonPolymorphed(
 }
 
 export function dismiss(minionName: string): Promise<void> {
-  return sendDismissRequest(minionName);
+  if (game.actors.getName(minionName)?.getActiveTokens().length > 0) {
+    return sendDismissRequest(minionName);
+  } else {
+    return Promise.resolve();
+  }
 }
 
 /**
@@ -218,7 +222,7 @@ const PLACE_TOKEN_HIGHLIGHT_BORDER = 0x000000;
 
 function chooseSquare(): Promise<{ x: number; y: number }> {
   if (canvas.ready) {
-    let readyCanvas: any = canvas;
+    const readyCanvas: any = canvas;
 
     return new Promise((resolve) => {
       const highlightLayer = readyCanvas.grid.addHighlightLayer(
@@ -232,8 +236,6 @@ function chooseSquare(): Promise<{ x: number; y: number }> {
         highlightLayer.clear();
         readyCanvas.stage.off("mousedown", leftClickListener);
         readyCanvas.stage.off("mousemove", moveListener);
-
-        readyCanvas.grid.destroyHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
 
         resolve({ x, y });
       };
