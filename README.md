@@ -95,6 +95,69 @@ Damage formula would then look something like `(@attributes.spellLevel)d6`.
 
 * You can place the dismiss ability on either the player's main actor or the summoned actor.  It's better organized to have it on the summoned actor.
 
+### Examples
+
+Summon using an actor without having advanced or item macros.
+
+```javascript
+await Summoner.placeAndSummon(
+  game.actors.getName("My Character"),
+  "Companion",
+);
+```
+
+Dismiss a token before summoning a replacement, using advanced macros from The Furnace and Item Macros to get the `actor`.
+
+```javascript
+await Summoner.dismiss("Companion");
+await Summoner.placeAndSummon(
+  actor,
+  "Companion",
+);
+```
+
+Scale a token placed by a cantrip, e.g. "Create Bonfire" from D&D 5E.  Because the spell level is zero, we pass the actor's level as the spell level.  Write the damage formula as `(ceil((@attributes.spellLevel+2)/6))d8` to get an additional die at levels 5, 11 and 17.
+
+```javascript
+await Summoner.placeAndSummon(
+      actor,
+      "Bonfire",
+      {
+        actorData: { data: { attributes: {
+          spellLevel: actor.data.data.details.level,
+        }}},
+      },
+      { setSpellBonuses: true }
+    );
+```
+
+Summon two tokens in a row using advanced macros
+
+```javascript
+await Summoner.placeAndSummon(
+  actor,
+  "Companion 1",
+);
+await Summoner.placeAndSummon(
+  actor,
+  "Companion 2",
+);
+```
+
+Summon two tokens in a row _without_ advanced macros
+
+```javascript
+Summoner.placeAndSummon(
+  actor,
+  "Companion 1",
+).then(() =>
+  Summoner.placeAndSummon(
+    actor,
+    "Companion 2",
+  )
+);
+```
+
 ## Notes
 
 * The way that Foundry manages permissions makes it very awkward to control a token for an actor that the player does not own.  We can get around this by doing tricks like setting the actor of the token to the player, but that causes other confusion because the system now thinks the token represents that actor and not the original one.

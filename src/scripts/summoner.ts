@@ -36,7 +36,7 @@ export function onReady(): void {
 export function placeAndSummon(
   actor: Actor,
   minionName: string,
-  overrides: Partial<TokenData> = {},
+  overrides: Partial<Token.Data> = {},
   options: SummonOptions = {}
 ): Promise<Token> {
   return chooseSquare().then(({ x, y }) =>
@@ -48,9 +48,9 @@ export function placeAndSummonFromSpell(
   actor: any,
   spell: any,
   minionName: string,
-  overrides: Partial<TokenData> = {}
+  overrides: Partial<Token.Data> = {}
 ): Promise<Token> {
-  return game.dnd5e.applications.AbilityUseDialog.create(spell).then(
+  return (game as any).dnd5e.applications.AbilityUseDialog.create(spell).then(
     (configuration) =>
       chooseSquare().then(async ({ x, y }) => {
         // Following logic ripped from DnD5e system.  Item5e.roll.
@@ -92,7 +92,7 @@ export function placeAndSummonFromSpell(
         const spellLevelOverride = {
           actorData: { data: { attributes: { spellLevel } } },
         };
-        sendSummonRequest(
+        return sendSummonRequest(
           actor,
           minionName,
           x,
@@ -163,19 +163,27 @@ export function dismiss(minionName: string): Promise<void> {
  *
  * TODO: is there a way to set these values on items when creating a token?
  */
-export function updateSpellDcsFromActor(actor: Actor, token: Token) {
+export function updateSpellDcsFromActor(
+  actor: Actor,
+  token: Token
+): Promise<Token> {
   // This is a DnD5e operation, so uses the 5E actor.
   const dc = (actor.data.data as any).attributes.spelldc;
   // The updates have to be reduced to make sure they are sequenced otherwise
   // they will cancel each other.
   // TODO: Can this be done in a bulk update?
-  return token.actor.items.reduce(
-    (promise, item) =>
-      promise.then(() =>
-        item.update({ "data.save.dc": dc, "data.save.scaling": "flat" })
-      ),
-    Promise.resolve()
-  );
+  return token.actor.items
+    .reduce(
+      (promise, item) =>
+        promise.then(() =>
+          item.update({
+            "data.save.dc": dc,
+            "data.save.scaling": "flat",
+          } as any)
+        ),
+      Promise.resolve({})
+    )
+    .then(() => token);
 }
 
 export function getSpellBonusesFromActor(actor: any) {
@@ -209,44 +217,48 @@ const PLACE_TOKEN_HIGHLIGHT_COLOR = 0x3366cc;
 const PLACE_TOKEN_HIGHLIGHT_BORDER = 0x000000;
 
 function chooseSquare(): Promise<{ x: number; y: number }> {
-  return new Promise((resolve) => {
-    const highlightLayer = canvas.grid.addHighlightLayer(
-      PLACE_TOKEN_HIGHLIGHT_LAYER
-    );
+  if (canvas.ready) {
+    let readyCanvas: any = canvas;
 
-    const leftClickListener = function (event) {
-      const scenePos = event.data.getLocalPosition(highlightLayer);
-      const [x, y] = canvas.grid.getTopLeft(scenePos.x, scenePos.y);
+    return new Promise((resolve) => {
+      const highlightLayer = readyCanvas.grid.addHighlightLayer(
+        PLACE_TOKEN_HIGHLIGHT_LAYER
+      );
 
-      highlightLayer.clear();
-      canvas.stage.off("mousedown", leftClickListener);
-      canvas.stage.off("mousemove", moveListener);
+      const leftClickListener = function (event) {
+        const scenePos = event.data.getLocalPosition(highlightLayer);
+        const [x, y] = readyCanvas.grid.getTopLeft(scenePos.x, scenePos.y);
 
-      canvas.grid.destroyHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
+        highlightLayer.clear();
+        readyCanvas.stage.off("mousedown", leftClickListener);
+        readyCanvas.stage.off("mousemove", moveListener);
 
-      resolve({ x, y });
-    };
+        readyCanvas.grid.destroyHighlightLayer(PLACE_TOKEN_HIGHLIGHT_LAYER);
 
-    let lastMoveTime = 0;
-    const moveListener = function (event) {
-      // event.stopPropagation();
-      const now = Date.now();
-      if (now - lastMoveTime <= 30) return;
-      const scenePos = event.data.getLocalPosition(highlightLayer);
-      const [x, y] = canvas.grid.getTopLeft(scenePos.x, scenePos.y);
-      highlightLayer.clear();
-      canvas.grid.grid.highlightGridPosition(highlightLayer, {
-        x,
-        y,
-        color: PLACE_TOKEN_HIGHLIGHT_COLOR,
-        border: PLACE_TOKEN_HIGHLIGHT_BORDER,
-      });
-      lastMoveTime = now;
-    };
+        resolve({ x, y });
+      };
 
-    canvas.stage.on("mousedown", leftClickListener);
-    canvas.stage.on("mousemove", moveListener);
-  });
+      let lastMoveTime = 0;
+      const moveListener = function (event) {
+        // event.stopPropagation();
+        const now = Date.now();
+        if (now - lastMoveTime <= 30) return;
+        const scenePos = event.data.getLocalPosition(highlightLayer);
+        const [x, y] = readyCanvas.grid.getTopLeft(scenePos.x, scenePos.y);
+        highlightLayer.clear();
+        readyCanvas.grid.grid.highlightGridPosition(highlightLayer, {
+          x,
+          y,
+          color: PLACE_TOKEN_HIGHLIGHT_COLOR,
+          border: PLACE_TOKEN_HIGHLIGHT_BORDER,
+        });
+        lastMoveTime = now;
+      };
+
+      readyCanvas.stage.on("mousedown", leftClickListener);
+      readyCanvas.stage.on("mousemove", moveListener);
+    });
+  }
 }
 
 interface SummonOptions {
@@ -261,7 +273,7 @@ interface SummonRequestMessage {
   name: string;
   x: number;
   y: number;
-  overrides: Partial<TokenData>;
+  overrides: Partial<Token.Data>;
   options: SummonOptions;
 }
 
@@ -278,7 +290,7 @@ function sendSummonRequest(
   name: string,
   x: number,
   y: number,
-  overrides: Partial<TokenData>,
+  overrides: Partial<Token.Data>,
   options: SummonOptions
 ): Promise<Token> {
   log("Sending summon request");
@@ -297,7 +309,7 @@ function sendSummonRequest(
     const hookId = Hooks.on(
       "updateToken",
       (scene: Scene, data, changes, isDiff) => {
-        const token: Token = new Token(data);
+        const token = new Token(data);
         if (
           changes.flags?.[MODULE_NAME]?.[SUMMON_COMPLETE_FLAG] &&
           game.actors.getName(name).id == token.data.actorId
